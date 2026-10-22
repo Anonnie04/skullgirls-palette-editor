@@ -19,7 +19,7 @@ build.py palette.spec palette_app.py palette.py palette_ui.py palette_browser.py
 color_wheel.py decoder.py direct_apply.py game_palette.py mod_details.py mod_info.py
 sprite_browser.py theme.py test_palette.py test_direct_apply.py test_fixtures.py version.py
 manager_bridge/Program.cs manager_bridge/PaletteApply.csproj manager_bridge/LICENSE
-scripts/build_release.py docs/RELEASING.md docs/licenses/README.md docs/licenses/Tcl.txt
+scripts/build_release.py docs/RELEASING.md docs/USER_GUIDE.md docs/BUILDING.md docs/licenses/README.md docs/licenses/Tcl.txt
 docs/licenses/Tk.txt .github/workflows/windows.yml .github/ISSUE_TEMPLATE/bug_report.md'''.split()
 SOURCE_FILES.append('Launch Palette Editor.cmd')
 
@@ -88,7 +88,9 @@ def main():
     if smoke.get('ui') != 'passed':
         raise RuntimeError('Packaged UI smoke test failed')
     source = {name: (ROOT / name).read_bytes() for name in SOURCE_FILES}
-    portable = {name: source[name] for name in ('README.md', 'LICENSE', 'CHANGELOG.md',
+    portable = {name: source[name] for name in ('README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md',
+                                               'docs/USER_GUIDE.md', 'docs/BUILDING.md', 'docs/RELEASING.md',
+                                               'manager_bridge/LICENSE',
                                                'THIRD_PARTY_NOTICES.txt', 'Launch Palette Editor.cmd')}
     portable[executable.name] = executable.read_bytes()
     portable['manager_bridge/source.zip'] = (ROOT / 'manager_bridge' / 'source.zip').read_bytes()

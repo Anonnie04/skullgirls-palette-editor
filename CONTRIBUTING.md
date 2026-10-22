@@ -1,7 +1,7 @@
 # Contributing
 
 Use Windows x64, Python 3.12 with Tkinter, and the .NET 9 SDK for the bridge.
-Install `requirements-dev.txt` in a virtual environment. See the README for
+Install `requirements-dev.txt` in a virtual environment. See [Building from source](docs/BUILDING.md) for
 building the required Mod Manager core and setting `PALETTE_MANAGER_ROOT`.
 
 Run `python test_palette.py` for preview, color editing and export checks.
