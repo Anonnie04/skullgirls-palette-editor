@@ -1,0 +1,49 @@
+name: Windows build and checks
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: editor
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: Anonnie04/skullgirls-mod-manager
+          ref: 768685b1c92cb40c377e0c1f7d0e437b97298f2f
+          path: manager
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: editor/requirements*.txt
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '9.0.x'
+      - name: Build compatible Manager runtime
+        working-directory: manager
+        run: dotnet publish App/App.csproj -c Release -o dist --nologo
+      - name: Install build dependencies
+        working-directory: editor
+        run: python -m pip install -r requirements-dev.txt
+      - name: Build, test and package
+        working-directory: editor
+        env:
+          PALETTE_MANAGER_ROOT: ${{ github.workspace }}/manager
+        run: python scripts/build_release.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-release
+          path: |
+            editor/release/*.zip
+            editor/release/SHA256SUMS.txt
+          if-no-files-found: error

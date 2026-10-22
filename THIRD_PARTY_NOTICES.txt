@@ -1,0 +1,14 @@
+Skullgirls Palette Editor includes Python, Tcl/Tk, NumPy, Pillow and the
+PyInstaller bootloader. Their license texts and bundled component notices
+are included in third-party-licenses/. The tool source is licensed under MIT.
+
+The decoder and visual theme are adapted from Skullgirls Sprite Workshop
+under the same MIT license. Skullgirls game assets are not distributed with
+this application.
+
+Direct apply runs a separate GPL-3.0 bridge that connects to the user's
+existing Skullgirls Mod Manager installation. The Manager core is not
+redistributed in this editor. Bridge source and its GPL license are in
+manager_bridge/source.zip; a packed executable can export them with
+--export-apply-source <destination.zip>. Manager dependency notices are in
+third-party-licenses/ModManager/. The Python editor code remains under MIT.
