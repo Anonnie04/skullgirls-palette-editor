@@ -16,10 +16,10 @@ from version import __version__
 SOURCE_FILES = '''.gitignore .gitattributes .python-version LICENSE README.md
 CHANGELOG.md CONTRIBUTING.md THIRD_PARTY_NOTICES.txt requirements.txt requirements-dev.txt
 build.py palette.spec palette_app.py palette.py palette_ui.py palette_browser.py
-color_wheel.py decoder.py direct_apply.py game_palette.py mod_details.py mod_info.py
-sprite_browser.py theme.py test_palette.py test_direct_apply.py test_fixtures.py version.py
+color_wheel.py decoder.py direct_apply.py export_options.py game_palette.py mod_details.py mod_info.py
+sprite_browser.py theme.py test_palette.py test_projects.py test_direct_apply.py test_fixtures.py palette_project.py version.py
 manager_bridge/Program.cs manager_bridge/PaletteApply.csproj manager_bridge/LICENSE
-scripts/build_release.py docs/RELEASING.md docs/USER_GUIDE.md docs/BUILDING.md docs/licenses/README.md docs/licenses/Tcl.txt
+scripts/build_release.py docs/RELEASING.md docs/USER_GUIDE.md docs/PROJECT_FORMAT.md docs/BUILDING.md docs/licenses/README.md docs/licenses/Tcl.txt
 docs/licenses/Tk.txt .github/workflows/windows.yml .github/ISSUE_TEMPLATE/bug_report.md'''.split()
 SOURCE_FILES.append('Launch Palette Editor.cmd')
 
@@ -89,7 +89,7 @@ def main():
         raise RuntimeError('Packaged UI smoke test failed')
     source = {name: (ROOT / name).read_bytes() for name in SOURCE_FILES}
     portable = {name: source[name] for name in ('README.md', 'LICENSE', 'CHANGELOG.md', 'CONTRIBUTING.md',
-                                               'docs/USER_GUIDE.md', 'docs/BUILDING.md', 'docs/RELEASING.md',
+                                               'docs/USER_GUIDE.md', 'docs/PROJECT_FORMAT.md', 'docs/BUILDING.md', 'docs/RELEASING.md',
                                                'manager_bridge/LICENSE',
                                                'THIRD_PARTY_NOTICES.txt', 'Launch Palette Editor.cmd')}
     portable[executable.name] = executable.read_bytes()

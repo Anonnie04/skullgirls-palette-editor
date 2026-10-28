@@ -4,7 +4,8 @@ Use Windows x64, Python 3.12 with Tkinter, and the .NET 9 SDK for the bridge.
 Install `requirements-dev.txt` in a virtual environment. See [Building from source](docs/BUILDING.md) for
 building the required Mod Manager core and setting `PALETTE_MANAGER_ROOT`.
 
-Run `python test_palette.py` for preview, color editing and export checks.
+Run `python test_palette.py` for preview, color editing, project/recovery and export checks.
+Use `python test_projects.py` for focused project persistence and recovery checks.
 After building the bridge, run `python test_direct_apply.py` for install,
 rollback and conflict checks against synthetic games. These tests require
 neither a game installation nor game assets. `python scripts/build_release.py`

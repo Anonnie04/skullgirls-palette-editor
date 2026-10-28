@@ -1,6 +1,7 @@
 """Synthetic palette tests. Never changes installed game archives."""
 import io
 import json
+import struct
 import tempfile
 import zipfile
 from pathlib import Path
@@ -21,6 +22,35 @@ def run():
         assert palette_slots(game, 'annie') == [1, 2]
         doc = PaletteDocument(game, 'annie', 1)
         assert doc.texture() == doc.dds
+        # Stored colors come from the exact gameplay export bytes, without tools
+        # or an installed game. Exact ramps have zero error, even in later slots.
+        from game_palette import patch as patch_palette, locate, expand
+        for slot in (1, 2):
+            storage_doc = PaletteDocument(game, 'annie', slot)
+            stored, difference = storage_doc.storage_preview()
+            assert np.array_equal(stored, storage_doc.colors) and not difference.any()
+            snapshot = storage_doc.colors.copy()
+            storage_doc.set_color(1, 8, (255, 0, 255, 91))
+            edited = storage_doc.colors.copy()
+            history_size = len(storage_doc.undo_stack)
+            stored, difference = storage_doc.storage_preview()
+            assert difference[1].max() > 50 and not difference[2:].any()
+            assert len(storage_doc.undo_stack) == history_size and np.array_equal(storage_doc.colors, edited)
+            storage_doc.export(root / f'storage-{slot}.zip', 'zip', mark_saved=False)
+            with zipfile.ZipFile(root / f'storage-{slot}.zip') as archive:
+                payload = archive.read('characters-foits.gfs/characters/annie.foit')
+            counts, offset = locate(storage_doc.metadata, slot, storage_doc.original)
+            assert np.array_equal(stored, expand(payload, offset, counts))
+            storage_doc.undo()
+            assert not storage_doc.storage_preview()[1].any()
+            assert np.array_equal(storage_doc.colors, snapshot)
+            storage_doc.redo()
+            assert np.array_equal(storage_doc.storage_preview()[0], stored)
+            # A solid material fits exactly, unlike an isolated shade edit.
+            solid = snapshot.copy()
+            solid[1, :, :3] = (240, 30, 90)
+            storage_doc.replace(solid)
+            assert not storage_doc.storage_preview()[1].any()
         original = doc.colors.copy()
         preview = np.array(doc.render(0))
         assert preview.shape == (16, 16, 4)
@@ -40,7 +70,7 @@ def run():
         with Image.open(io.BytesIO(doc.texture())) as image:
             assert np.array_equal(np.array(image.convert('RGBA')), doc.colors)
         doc.export(root / 'palette.zip', 'zip')
-        assert not doc.dirty
+        assert doc.dirty, 'Export must not mark an editable project saved'
         with zipfile.ZipFile(root / 'palette.zip') as archive:
             assert set(archive.namelist()) == {'mod.json', 'sprites.gfs/sprites/annie_1p.dds', 'characters-foits.gfs/characters/annie.foit'}
             assert json.loads(archive.read('mod.json'))['id'].startswith('paletteeditor.annie.1.')
@@ -95,12 +125,44 @@ def run():
             raise AssertionError('Wrong dimensions accepted')
         # Test actual editor wiring without opening file dialogs.
         from palette_app import create_app
-        window, editor = create_app()
+        window, editor = create_app(recovery_directory=root / 'Recovery')
         window.withdraw()
         assert window.title() == 'Skullgirls Palette Editor'
         editor.doc = doc
         editor.frame_box.configure(to=len(doc.frame_indices))
         editor.refresh()
+        # Preview controls use decoded storage colors without changing edits.
+        requested = doc.colors.copy()
+        editor.preview_mode.set('Stored')
+        editor.change_preview_mode()
+        assert editor.frame_info.get().startswith('Stored ·')
+        assert 'Largest storage differences' in editor.storage_info.get()
+        editor.preview_mode.set('Difference')
+        editor.change_preview_mode()
+        assert editor.frame_info.get().startswith('Difference ·')
+        assert np.array_equal(doc.colors, requested)
+        doc.colors = doc.original.copy()
+        editor.refresh()
+        assert 'Exact storage fit' in editor.storage_info.get()
+        from PIL import ImageTk
+        assert not np.array(ImageTk.getimage(editor.photo))[:, :, :3].any()
+        doc.colors = requested.copy()
+        metadata = doc.metadata
+        doc.metadata = b'unsupported'
+        editor.preview_mode.set('Requested')
+        editor.refresh()
+        assert 'Storage preview unavailable' in editor.storage_info.get()
+        assert editor.frame_info.get().startswith('Requested ·')
+        doc.export(root / 'preview-unavailable.png', 'png', mark_saved=False)
+        doc.metadata = metadata
+        editor.preview_mode.set('Stored')
+        editor.change_preview_mode()
+        editor.choose_color()
+        assert editor.preview_mode.get() == 'Requested'
+        editor.picker.finish(False)
+        assert editor.preview_mode.get() == 'Stored'
+        editor.preview_mode.set('Requested')
+        editor.change_preview_mode()
         # All installed slots are discoverable and can be previewed without edits.
         editor.game.set(str(game))
         editor.character.set('Annie')
@@ -135,6 +197,9 @@ def run():
         old_history = len(doc.undo_stack)
         editor.export('zip')
         dialog = editor.mod_dialog
+        assert 'full character metadata' in dialog.note and 'regardless of installer' in dialog.note
+        assert 'same game build' in dialog.note and 'Export works without Mod Manager or Sprite Workshop' in dialog.note
+        assert dialog.save_button.instate(['!disabled'])
         dialog.name.set('')
         with patch('palette_ui.filedialog.asksaveasfilename') as save_as:
             dialog.submit()
@@ -166,6 +231,69 @@ def run():
         editor.mod_dialog.name.set('Cancelled name')
         editor.mod_dialog.destroy()
         assert doc.mod_details['name'] == 'Candy Annie — test'
+        # Explain and select an image format before its destination picker.
+        # No Manager/Workshop folder or bridge is consulted for either format.
+        image_colors, image_details = doc.colors.copy(), doc.mod_details.copy()
+        for kind in ('png', 'dds'):
+            with patch('palette_ui.filedialog.askdirectory') as dependency, \
+                    patch('palette_ui.apply_palette') as bridge:
+                editor.save_image()
+                image_dialog = editor.mod_dialog
+                image_dialog.kind.set(kind)
+                image_dialog.update_note()
+                assert '16 × 4 colors' in image_dialog.note.get() and 'Source data:' in image_dialog.note.get()
+                assert ('RGBA palette colors' if kind == 'png' else 'character-select palette texture') in image_dialog.note.get()
+                assert 'gameplay changes and installation files' in image_dialog.note.get().lower()
+                with patch('palette_ui.filedialog.asksaveasfilename', return_value=''):
+                    image_dialog.submit()
+                assert image_dialog.winfo_exists() and image_dialog.kind.get() == kind
+                wrong_path = root / ('wrong-extension.' + ('dds' if kind == 'png' else 'png'))
+                with patch('palette_ui.filedialog.asksaveasfilename', return_value=str(wrong_path)), \
+                        patch('palette_ui.messagebox.showerror') as error:
+                    image_dialog.submit()
+                    assert error.called and not wrong_path.exists()
+                output = root / ('ui-palette.' + kind)
+                with patch('palette_ui.filedialog.asksaveasfilename', return_value=str(output)) as picker:
+                    image_dialog.submit()
+                    assert picker.call_args.kwargs['defaultextension'] == '.' + kind
+                assert not image_dialog.winfo_exists()
+                with Image.open(output) as image:
+                    assert np.array_equal(np.array(image.convert('RGBA')), image_colors)
+                assert not dependency.called and not bridge.called
+        assert doc.mod_details == image_details and np.array_equal(doc.colors, image_colors)
+        # Gameplay-only incompatibilities are shown before any save picker;
+        # standalone palette image export remains available.
+        metadata = doc.metadata
+        for unsupported, reason in ((b'legacy palette metadata', 'legacy embedded palettes'),
+                                    (metadata[:8] + struct.pack('<I', 42) + metadata[12:], 'version 42'),
+                                    (b'', 'Truncated character metadata')):
+            doc.metadata = unsupported
+            editor.export('zip')
+            blocked = editor.mod_dialog
+            assert reason in blocked.error.get() and blocked.save_button.instate(['disabled'])
+            assert 'still export PNG/DDS' in blocked.error.get()
+            with patch('palette_ui.filedialog.asksaveasfilename') as picker:
+                blocked.submit()
+                assert not picker.called
+            blocked.destroy()
+            editor.save_image()
+            assert editor.mod_dialog.export_button.instate(['!disabled'])
+            editor.mod_dialog.destroy()
+        doc.metadata = metadata
+        # Legacy game assets are explained even when their DDS entry is absent.
+        from test_fixtures import make_gfs
+        foit_path, sprites_path = game / 'data01/characters-foits.gfs', game / 'data01/sprites.gfs'
+        foit_bytes, sprites_bytes = foit_path.read_bytes(), sprites_path.read_bytes()
+        make_gfs(foit_path, {'characters/annie.foit': b'legacy palette metadata'})
+        make_gfs(sprites_path, {})
+        try:
+            PaletteDocument(game, 'annie', 1)
+        except ValueError as exc:
+            assert 'legacy embedded palettes' in str(exc) and 'DDS-based game build' in str(exc)
+        else:
+            raise AssertionError('Legacy game layout was accepted')
+        foit_path.write_bytes(foit_bytes)
+        sprites_path.write_bytes(sprites_bytes)
         from mod_info import validate_details
         for version in ('1', '-1.0', '1.2.3.4.5', '1.0-beta', '1.2147483648'):
             try:
@@ -312,7 +440,7 @@ def run():
         picker.finish(True)
         assert not picker.closed and editor.picker is picker
         picker.finish(False)
-        with patch('palette_ui.messagebox.askyesno', return_value=False):
+        with patch('palette_ui.messagebox.askyesnocancel', return_value=None):
             assert not editor.confirm_discard()
         window.update_idletasks()
         editor.choose_color(True)
@@ -325,7 +453,9 @@ def run():
         # Archive bytes are unchanged even after all edits and exports.
         fresh = PaletteDocument(game, 'annie', 1)
         assert np.array_equal(fresh.colors, original)
-    print('Palette tests passed: slot discovery/preview, Apply UI, manifest editing, exports, sprite selection, live wheel, alpha and history.')
+    from test_projects import run as test_projects
+    test_projects()
+    print('Palette tests passed: storage preview, projects/recovery, slot discovery, Apply UI, manifest editing, exports, sprite selection, live wheel, alpha and history.')
 
 
 if __name__ == '__main__':

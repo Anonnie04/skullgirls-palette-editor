@@ -59,6 +59,5 @@ def apply_palette(document, details, manager_root, operations):
     document.metadata = updated
     document.dds = document.texture()
     document.original = document.colors.copy()
-    document.saved = document.colors.copy()
     document.mod_details = details.copy()
     return receipt

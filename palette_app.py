@@ -8,7 +8,7 @@ from theme import configure_theme, BG, MUTED
 from palette_ui import PaletteEditor
 
 
-def create_app():
+def create_app(recovery_directory=None):
     root = tk.Tk()
     root.title('Skullgirls Palette Editor')
     root.geometry('1120x820')
@@ -40,7 +40,7 @@ def create_app():
         if path:
             game.set(path)
     ttk.Button(bar, text='Browse…', command=browse).grid(row=0, column=2, padx=(10, 0))
-    editor = PaletteEditor(root, game)
+    editor = PaletteEditor(root, game, recovery_directory)
     editor.grid(row=2, column=0, sticky='nsew', padx=8, pady=8)
     root.protocol('WM_DELETE_WINDOW', lambda: root.destroy() if editor.confirm_discard() else None)
     return root, editor

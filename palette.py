@@ -10,8 +10,9 @@ import zipfile
 import numpy as np
 from PIL import Image
 from decoder import GFS, NAMES, data_folder, parse_frames_data, decode_image, colorize
-from game_palette import patch as patch_game_palette
+from game_palette import patch as patch_game_palette, locate, expand, metadata_version
 from mod_info import validate_details
+from palette_project import mark_saved, save_project
 
 
 def palette_source(game):
@@ -41,8 +42,16 @@ class PaletteDocument:
         self.mod_details = dict(name=f'{NAMES[character]} palette {slot}',
                                 desc='Custom character-select and gameplay palette. Requires the game version used for export.',
                                 version='1.1.0')
+        # Explain legacy/unsupported layouts before looking for their missing DDS.
+        with GFS(self.source / 'characters-foits.gfs') as foits:
+            self.metadata = foits.read(f'characters/{character}.foit')
+            metadata_version(self.metadata)
+            location = foits.entries[f'characters/{character}.foit']
+            self.metadata_internal = next(path for path, value in foits.entries.items() if value == location)
         with GFS(self.source / 'sprites.gfs') as archive:
             key = f'sprites/{character}_{slot}p.dds'
+            if key not in archive.entries:
+                raise ValueError(f'No DDS palette found for {NAMES[character]} slot {slot}. Scan the game and choose an available slot.')
             location = archive.entries[key]
             self.internal = next(path for path, value in archive.entries.items() if value == location)
             self.dds = archive.read(key)
@@ -59,25 +68,25 @@ class PaletteDocument:
             raise ValueError('This palette texture format is not supported for lossless editing.')
         self.colors = self.original.copy()
         self.undo_stack, self.redo_stack = [], []
-        self.saved = self.colors.copy()
-        with GFS(self.source / 'characters-foits.gfs') as foits, GFS(self.source / 'characters-art.gfs') as art, GFS(self.source / 'characters-art-pt.gfs') as pt:
-            metadata = foits.read(f'characters/{character}.foit')
-            self.metadata = metadata
-            location = foits.entries[f'characters/{character}.foit']
-            self.metadata_internal = next(path for path, value in foits.entries.items() if value == location)
-            if metadata[4:8] != b'VRSN':
-                raise ValueError('This depot uses embedded legacy palettes. Select a game version with DDS palettes.')
-            self.frames = parse_frames_data(character, metadata, art.entries[f'characters/{character}.art'][1])
+        with GFS(self.source / 'characters-art.gfs') as art, GFS(self.source / 'characters-art-pt.gfs') as pt:
+            self.frames = parse_frames_data(character, self.metadata, art.entries[f'characters/{character}.art'][1])
             self.banks = {5: art.read(f'characters/{character}.art'), 4: pt.read(f'characters/{character}.art-pt')}
         self.frame_indices = [i for i, frame in enumerate(self.frames)
                               if any(k in (0, 1) and m['offset'] >= 0 and m['used'] for k, m in frame['images'].items())]
         if not self.frame_indices:
             raise ValueError('No previewable sprite frames found.')
         self.cache = {}
+        self.project_path = self.project_digest = None
+        mark_saved(self)
 
     @property
     def dirty(self):
-        return not np.array_equal(self.colors, self.saved)
+        return (not np.array_equal(self.colors, self.saved)
+                or self.mod_details != self.saved_details
+                or (self.dds, self.metadata) != self.saved_baseline)
+
+    def save_project(self, path):
+        save_project(self, path)
 
     def replace(self, colors):
         colors = np.asarray(colors)
@@ -159,20 +168,59 @@ class PaletteDocument:
     def texture(self):
         return self.dds[:128] + self.colors[:, :, [2, 1, 0, 3]].tobytes()
 
+    def storage_preview(self):
+        """Decode the exact export payload; never approximate the fitter separately.
+
+        Return stored RGBA samples and absolute per-channel errors (0–255).
+        Cache by content so live picker edits, undo and direct apply invalidate it.
+        """
+        key = (self.metadata, self.slot, self.original.tobytes(), self.colors.tobytes())
+        cached = getattr(self, '_storage_preview', None)
+        if cached is None or cached[0] != key:
+            metadata, _ = patch_game_palette(self.metadata, self.slot, self.original, self.colors)
+            counts, start = locate(self.metadata, self.slot, self.original)
+            stored = expand(metadata, start, counts)
+            difference = np.abs(stored.astype(int) - self.colors.astype(int)).astype(np.uint8)
+            # Invisible RGB is irrelevant, but encoded alpha differences matter.
+            difference[:, :, :3][(stored[:, :, 3] == 0) & (self.colors[:, :, 3] == 0)] = 0
+            stored.setflags(write=False)
+            difference.setflags(write=False)
+            self._storage_preview = key, stored, difference
+        return self._storage_preview[1:]
+
     def output_path(self, path):
         path = Path(path).resolve()
         game = self.source.parent if self.source.name.lower() in ('data01', 'data02') else self.source
         if path.is_relative_to(game):
-            raise ValueError('Save outside the game folder, then import the ZIP in Mod Manager.')
+            raise ValueError('Save projects and exports outside the game folder.')
         return path
 
+    def export_metadata(self):
+        """Preserve fresh unrelated slots/records, refusing a changed target."""
+        with GFS(self.source / 'sprites.gfs') as sprites, GFS(self.source / 'characters-foits.gfs') as foits:
+            dds = sprites.read(f'sprites/{self.character}_{self.slot}p.dds')
+            metadata = foits.read(f'characters/{self.character}.foit')
+        if dds != self.dds:
+            raise ValueError('The game palette changed after loading. Save your project, then reopen it to review edits against the current source.')
+        if metadata != self.metadata:
+            old_counts, old_start = locate(self.metadata, self.slot, self.original)
+            counts, start = locate(metadata, self.slot, self.original)
+            if counts != old_counts or not np.array_equal(expand(metadata, start, counts),
+                                                          expand(self.metadata, old_start, old_counts)):
+                raise ValueError('The gameplay palette changed after loading. Save your project, then reopen it to review the current source.')
+        return patch_game_palette(metadata, self.slot, self.original, self.colors)[0]
+
     def export(self, path, kind, mod_details=None, mark_saved=True):
+        """Export files; the legacy mark_saved flag only remembers ZIP details.
+
+        Editable-work checkpoints are set exclusively by save_project.
+        """
         path = self.output_path(path)
         data = self.texture()
         buffer = io.BytesIO()
         if kind == 'zip':
             details = validate_details(self.mod_details if mod_details is None else mod_details)
-            metadata, _ = patch_game_palette(self.metadata, self.slot, self.original, self.colors)
+            metadata = self.export_metadata()
             identity = hashlib.sha256(self.internal.encode() + data + metadata).hexdigest()[:16]
             info = dict(id=f'paletteeditor.{self.character}.{self.slot}.{identity}',
                         author='Palette Editor', url=None, **details)
@@ -192,8 +240,7 @@ class PaletteDocument:
         path.write_bytes(buffer.getvalue())
         if kind == 'zip' and mark_saved:
             self.mod_details = details.copy()
-        if mark_saved:
-            self.saved = self.colors.copy()
+        # Exporting distributable files does not save an editable project.
 
     def import_image(self, path):
         with Image.open(path) as image:

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 — 28 October 2026
+
+- Explain PNG/DDS/ZIP contents, source compatibility and character metadata conflicts before export.
+- Check ZIP compatibility before choosing a destination and explain unsupported legacy/layout versions.
+- Save and reopen editable palette projects with colors, source identity and export details.
+- Recover atomic local drafts as separate unsaved projects and review changed game sources.
+- Keep project saving separate from image/mod export and direct apply.
+- Preserve fresh unrelated metadata and slots during ZIP export; reject changed target palettes.
+- Compare requested colors with stored gameplay colors and a difference view.
+- Highlight materials with fitting differences and show the largest RGBA errors.
+
 ## 0.1.0
 
 - Preview a character's sprites beside its editable palette.

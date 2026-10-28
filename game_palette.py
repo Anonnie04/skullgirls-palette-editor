@@ -4,10 +4,20 @@ import numpy as np
 from decoder import Reader
 
 
+def metadata_version(metadata):
+    if len(metadata) < 12:
+        raise ValueError('Truncated character metadata; cannot read gameplay palettes.')
+    if metadata[4:8] != b'VRSN':
+        raise ValueError('This game build uses legacy embedded palettes. This editor requires a DDS-based game build with supported character metadata.')
+    version = struct.unpack_from('<I', metadata, 8)[0]
+    if version not in (3, 9):
+        raise ValueError(f'Character metadata layout version {version} is unsupported. This editor supports layouts 3 and 9.')
+    return version
+
+
 def layout(metadata):
     try:
-        if metadata[4:8] != b'VRSN' or struct.unpack_from('<I', metadata, 8)[0] not in (3, 9):
-            raise ValueError('Unsupported embedded palette version.')
+        metadata_version(metadata)
         start = struct.unpack_from('<I', metadata)[0]
         if not 12 <= start < len(metadata):
             raise ValueError('Invalid embedded palette offset.')

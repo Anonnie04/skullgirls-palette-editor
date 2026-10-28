@@ -37,7 +37,7 @@ def run():
         doc = PaletteDocument(game, 'annie', 1)
         colors = doc.colors.copy(); colors[1, :, :3] = (230, 40, 100); doc.replace(colors)
         receipt = apply_palette(doc, doc.mod_details, manager, root / 'operations')
-        assert receipt['status'] == 'passed' and not doc.dirty
+        assert receipt['status'] == 'passed' and doc.dirty  # Applying is separate from saving editable work.
         with GFS(game / 'data01/sprites.gfs') as archive:
             first_dds = archive.read('sprites/annie_1p.dds')
             assert first_dds == doc.texture() and archive.read('sprites/keep.bin') == b'other mod payload'

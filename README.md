@@ -7,14 +7,18 @@ on the right, and see your changes live with a modern color wheel.
 
 - Browse each character's palette slots and choose sprites for preview.
 - Recolor individual shades or whole materials, with undo and redo.
+- Compare requested colors with stored gameplay colors and fitting differences.
+- Save editable projects with export details and recover local drafts.
 - Import/export PNG and DDS palettes, or save a mod ZIP with your own name, description and version.
+- Review output contents, game-build compatibility and metadata conflicts before export.
 - Apply character-select and gameplay palettes through Mod Manager with verified backups.
 
 ## Quick start
 
 1. Extract the Windows ZIP and open **Skullgirls Palette Editor.exe**.
 2. Choose your game folder, character and palette slot, then **Load from game**.
-3. Edit your colors, then save a mod ZIP or choose **Apply palette to game…**.
+3. Edit your colors and **Save project** to resume later.
+4. Export PNG/DDS or a mod ZIP, or choose **Apply palette to game…**.
 
 Windows x64 is supported. Direct apply requires [Skullgirls Mod Manager](https://github.com/Anonnie04/skullgirls-mod-manager)
 and the .NET 9 Desktop Runtime. Close Skullgirls before applying.
